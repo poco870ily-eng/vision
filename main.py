@@ -1,63 +1,54 @@
 import os
-from fastapi import FastAPI, WebSocket
-from telebot import TeleBot, types
+import json
+import asyncio
+import threading
+import websockets
+from telebot import TeleBot
 
 TOKEN = os.getenv("TOKEN")
-WS_SECRET = os.getenv("WS_SECRET", "12345")
+WS_URL = os.getenv("WS_URL")  # ← теперь из ENV
 
 bot = TeleBot(TOKEN)
-app = FastAPI()
 
 users = set()
-
-
-@app.get("/")
-def home():
-    return {"status": "bot is running"}
-
-
-@app.post(f"/webhook/{TOKEN}")
-async def telegram_webhook(update: dict):
-    update = types.Update.de_json(update)
-    bot.process_new_updates([update])
-    return {"ok": True}
 
 
 @bot.message_handler(commands=["start"])
 def start(message):
     users.add(message.chat.id)
-    bot.send_message(message.chat.id, "Ты подключен к рассылке!")
+    bot.send_message(message.chat.id, "Ты подключен к уведомлениям!")
 
 
-@app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
-    await websocket.accept()
-
-    key = websocket.headers.get("x-api-key")
-
-    if key != WS_SECRET:
-        await websocket.close()
-        return
-
+async def listen_websocket():
     while True:
-        data = await websocket.receive_json()
+        try:
+            async with websockets.connect(WS_URL) as websocket:
+                print("WebSocket подключен:", WS_URL)
 
-        text = data.get("text")
+                async for message in websocket:
+                    print("Получено:", message)
 
-        if not text:
-            await websocket.send_json({"error": "Нет text"})
-            continue
+                    try:
+                        data = json.loads(message)
+                        text = data.get("text", message)
+                    except:
+                        text = message
 
-        count = 0
+                    for user_id in users:
+                        try:
+                            bot.send_message(user_id, text)
+                        except:
+                            pass
 
-        for user_id in users:
-            try:
-                bot.send_message(user_id, text)
-                count += 1
-            except:
-                pass
+        except Exception as e:
+            print("Ошибка WebSocket:", e)
+            await asyncio.sleep(5)
 
-        await websocket.send_json({
-            "status": "ok",
-            "sent_to": count
-        })
+
+def run_ws():
+    asyncio.run(listen_websocket())
+
+
+threading.Thread(target=run_ws).start()
+
+bot.polling(none_stop=True)
