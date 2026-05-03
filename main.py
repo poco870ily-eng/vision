@@ -24,7 +24,7 @@ WS_URL       = os.getenv("WS_URL")
 SECRET_KEY   = os.getenv("SECRET_KEY")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-ADMIN_ID     = int(os.getenv("ADMIN_ID", "0"))
+ADMIN_ID     = int(os.getenv("ADMIN_ID") or "0")
 PORT         = int(os.getenv("PORT", "8000"))
 PLACE_ID     = "109983668079237"
 
