@@ -2,3 +2,4 @@ pyTelegramBotAPI
 websockets
 requests
 flask
+supabase
