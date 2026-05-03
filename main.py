@@ -244,7 +244,7 @@ def format_event(row: dict) -> str:
 
     PLACE_ID = "109983668079237"
     effective_place_id = place_id or PLACE_ID
-    join_url = f"https://join-8hn1.onrender.com?jobId={job_id}&placeId={effective_place_id}"
+    join_url = f"https://join-8hn1.onrender.com/join.html?placeId={effective_place_id}&jobId={job_id}"
     join_line = f"\n🚀 [Войти в игру]({join_url})" if job_id != "—" else ""
 
     return (
