@@ -226,6 +226,7 @@ def parse_pets(models_str: str) -> list[dict]:
 def format_event(row: dict) -> str:
     models       = row.get("models") or row.get("models_text") or row.get("modelsText") or ""
     job_id       = row.get("jobId", "—")
+    place_id     = row.get("placeId", "")
     player_count = row.get("playerCount", "?")
     max_players  = row.get("maxPlayers", "?")
 
@@ -241,13 +242,19 @@ def format_event(row: dict) -> str:
         if pet["mutation"] or pet["generation"]:
             pets_block += "\n"
 
+    PLACE_ID = "109983668079237"
+    effective_place_id = place_id or PLACE_ID
+    join_url = f"https://join-8hn1.onrender.com?jobId={job_id}&placeId={effective_place_id}"
+    join_line = f"\n🚀 [Войти в игру]({join_url})" if job_id != "—" else ""
+
     return (
         "┌─────────────────────┐\n"
         "│      🔥 *НОВЫЙ ЛОГ*      │\n"
         "└─────────────────────┘\n\n"
         f"🐾 *Питомцы:*\n{pets_block}\n"
         f"👥 *Игроки:* `{player_count}/{max_players}`\n\n"
-        f"🆔 *Job ID:*\n`{job_id}`\n"
+        f"🆔 *Job ID:*\n`{job_id}`"
+        f"{join_line}\n"
         "─────────────────────"
     )
 
