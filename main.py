@@ -9,6 +9,7 @@ import websockets
 from datetime import datetime, timedelta, timezone
 from telebot import TeleBot
 from telebot.types import ReplyKeyboardMarkup, KeyboardButton
+from flask import Flask
 
 from supabase import create_client, Client
 
@@ -22,6 +23,7 @@ SECRET_KEY   = os.getenv("SECRET_KEY")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 ADMIN_ID     = int(os.getenv("ADMIN_ID", "0"))   # ← ваш Telegram chat ID
+PORT         = int(os.getenv("PORT", "8000"))
 
 bot: TeleBot   = TeleBot(TOKEN)
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -486,5 +488,25 @@ def run_ws():
     asyncio.run(listen_ws())
 
 
-threading.Thread(target=run_ws, daemon=True).start()
+# ─────────────────────────────────────────────
+#  Web server (открывает порт для веб-сервиса)
+# ─────────────────────────────────────────────
+
+web = Flask(__name__)
+
+@web.route("/")
+def index():
+    return "OK", 200
+
+@web.route("/health")
+def health():
+    active = get_active_users_count()
+    return {"status": "ok", "active_users": active}, 200
+
+def run_web():
+    web.run(host="0.0.0.0", port=PORT)
+
+
+threading.Thread(target=run_ws,  daemon=True).start()
+threading.Thread(target=run_web, daemon=True).start()
 bot.polling(none_stop=True)
