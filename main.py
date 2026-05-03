@@ -37,6 +37,9 @@ user_state: dict[int, str] = {}
 # Users who paused notifications (in-memory)
 paused_users: set[int] = set()
 
+# Users already notified about expired access (avoid duplicate messages)
+notified_expired: set[int] = set()
+
 # Language per user: "ru" | "en"
 user_lang: dict[int, str] = {}
 
@@ -116,6 +119,16 @@ TEXTS: dict[str, dict[str, str]] = {
         "log_no_data":        "<i>нет данных</i>",
         "dur_labels":         ["1ч", "6ч", "12ч", "24ч", "72ч", "168ч", "720ч"],
         "dur_hours":          [1,    6,    12,    24,    72,    168,    720],
+        "buy_promo":          (
+            "🛒 <b>Хотите получать уведомления?</b>\n\n"
+            "Купить доступ можно здесь:\n"
+            "👉 <a href='https://funpay.com/users/14501254/'>funpay.com/users/14501254</a>"
+        ),
+        "expired_notify":     (
+            "⏰ Ваш доступ <b>истёк</b>!\n\n"
+            "Чтобы продолжить получать уведомления — купите новый доступ:\n"
+            "👉 <a href='https://funpay.com/users/14501254/'>funpay.com/users/14501254</a>"
+        ),
     },
     "en": {
         "choose_lang":        "🌐 Choose language / Выберите язык:",
@@ -184,6 +197,16 @@ TEXTS: dict[str, dict[str, str]] = {
         "log_no_data":        "<i>no data</i>",
         "dur_labels":         ["1h", "6h", "12h", "24h", "72h", "168h", "720h"],
         "dur_hours":          [1,    6,    12,    24,    72,    168,    720],
+        "buy_promo":          (
+            "🛒 <b>Want to receive notifications?</b>\n\n"
+            "You can purchase access here:\n"
+            "👉 <a href='https://funpay.com/users/14501254/'>funpay.com/users/14501254</a>"
+        ),
+        "expired_notify":     (
+            "⏰ Your access has <b>expired</b>!\n\n"
+            "To continue receiving notifications — buy new access:\n"
+            "👉 <a href='https://funpay.com/users/14501254/'>funpay.com/users/14501254</a>"
+        ),
     },
 }
 
@@ -281,6 +304,7 @@ def try_authorize(chat_id: int, code: str) -> tuple[bool, str]:
     ).execute()
 
     paused_users.discard(chat_id)
+    notified_expired.discard(chat_id)
     label = hours_label(hours, lang)
     return True, TEXTS[lang]["access_granted"].format(label=label)
 
@@ -568,6 +592,13 @@ def _send_welcome(cid: int):
             TEXTS[lang]["welcome_user"],
             parse_mode="HTML",
             reply_markup=user_menu(cid),
+        )
+        # Show purchase link to non-admin users on start
+        bot.send_message(
+            cid,
+            TEXTS[lang]["buy_promo"],
+            parse_mode="HTML",
+            disable_web_page_preview=True,
         )
 
 
@@ -888,6 +919,53 @@ def fsm_dispatcher(message):
 
 
 # ══════════════════════════════════════════════
+#  Expiry notifier — background thread
+# ══════════════════════════════════════════════
+
+def expiry_notifier():
+    """
+    Runs every 60 seconds. Finds users whose access has just expired
+    and sends them a buy-link notification (once per expiry cycle).
+    """
+    while True:
+        try:
+            now = datetime.now(timezone.utc).isoformat()
+            # Fetch ALL users (including expired ones)
+            res = (
+                supabase.table("authorized_users")
+                .select("chat_id, authorized_until")
+                .execute()
+            )
+            for row in (res.data or []):
+                uid = row["chat_id"]
+                # Skip admin
+                if uid == ADMIN_ID:
+                    continue
+                # Skip already notified
+                if uid in notified_expired:
+                    continue
+                try:
+                    until_dt = datetime.fromisoformat(row["authorized_until"])
+                    if until_dt.tzinfo is None:
+                        until_dt = until_dt.replace(tzinfo=timezone.utc)
+                    if until_dt <= datetime.now(timezone.utc):
+                        lang = get_lang(uid)
+                        bot.send_message(
+                            uid,
+                            TEXTS[lang]["expired_notify"],
+                            parse_mode="HTML",
+                            disable_web_page_preview=True,
+                            reply_markup=user_menu(uid),
+                        )
+                        notified_expired.add(uid)
+                except Exception as e:
+                    print(f"⚠️ Expiry notifier error for {uid}:", e)
+        except Exception as e:
+            print("❌ Expiry notifier query error:", e)
+        threading.Event().wait(60)
+
+
+# ══════════════════════════════════════════════
 #  WebSocket listener
 # ══════════════════════════════════════════════
 
@@ -953,6 +1031,7 @@ def run_web():
     web.run(host="0.0.0.0", port=PORT)
 
 
+threading.Thread(target=expiry_notifier, daemon=True).start()
 threading.Thread(target=run_ws,  daemon=True).start()
 threading.Thread(target=run_web, daemon=True).start()
 bot.polling(none_stop=True)
